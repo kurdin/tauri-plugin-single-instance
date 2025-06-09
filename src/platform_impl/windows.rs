@@ -104,8 +104,26 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
+    // Check if this is WM_DESTROY first, as we always want to handle it
+    if msg == WM_DESTROY {
+        let data_ptr = GetWindowLongPtrW(hwnd, GWL_USERDATA)
+            as *mut (AppHandle<R>, Box<SingleInstanceCallback<R>>);
+        if !data_ptr.is_null() {
+            let _ = Box::from_raw(data_ptr);
+        }
+        return 0;
+    }
+
+    // Get the data pointer and check if it's null
     let data_ptr = GetWindowLongPtrW(hwnd, GWL_USERDATA)
         as *mut (AppHandle<R>, Box<SingleInstanceCallback<R>>);
+    
+    // If data_ptr is null, we haven't set up the window data yet
+    // Just use the default window procedure
+    if data_ptr.is_null() {
+        return DefWindowProcW(hwnd, msg, wparam, lparam);
+    }
+
     let (app_handle, callback) = &mut *data_ptr;
 
     match msg {
@@ -119,11 +137,6 @@ unsafe extern "system" fn single_instance_window_proc<R: Runtime>(
                 callback(&app_handle, args, cwd.to_string());
             }
             1
-        }
-
-        WM_DESTROY => {
-            let _ = Box::from_raw(data_ptr);
-            0
         }
         _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
